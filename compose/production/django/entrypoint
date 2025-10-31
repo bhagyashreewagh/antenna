@@ -4,21 +4,23 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
+# Set safe defaults to avoid crashes if env vars are missing
+export REDIS_URL="${REDIS_URL:-}"
+export CELERY_BROKER_URL="${CELERY_BROKER_URL:-${REDIS_URL:-}}"
 
-# N.B. If only .env files supported variable expansion...
-export CELERY_BROKER_URL="${CELERY_BROKER_URL:-$REDIS_URL}"
+export POSTGRES_USER="${POSTGRES_USER:-postgres}"
+export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
+export POSTGRES_DB="${POSTGRES_DB:-postgres}"
+export POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
+export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 
-
-if [ -z "${POSTGRES_USER}" ]; then
-    base_postgres_image_default_user='postgres'
-    export POSTGRES_USER="${base_postgres_image_default_user}"
-fi
+# Construct the database URL
 export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
 
+# Wait for PostgreSQL to become available
 python << END
 import sys
 import time
-
 import psycopg
 
 suggest_unrecoverable_after = 30
@@ -36,13 +38,12 @@ while True:
         break
     except psycopg.OperationalError as error:
         sys.stderr.write("Waiting for PostgreSQL to become available...\n")
-
         if time.time() - start > suggest_unrecoverable_after:
-            sys.stderr.write("  This is taking longer than expected. The following exception may be indicative of an unrecoverable error: '{}'\n".format(error))
-
-    time.sleep(1)
+            sys.stderr.write(f"This is taking longer than expected. Exception: {error}\n")
+        time.sleep(1)
 END
 
->&2 echo 'PostgreSQL is available'
+>&2 echo "PostgreSQL is available"
 
+# Start the actual process
 exec "$@"
