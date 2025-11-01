@@ -1,11 +1,10 @@
 #!/bin/bash
 
 # --- ENABLE DEBUGGING MODE ---
-# Print every command and its result in real time.
 set -o errexit
 set -o pipefail
 set -o nounset
-set -o xtrace  # 👈 This makes bash echo each command before executing it.
+set -o xtrace  # echo each command before executing it
 
 echo "===== ENTRYPOINT START ====="
 echo "Current user: $(whoami)"
@@ -33,10 +32,10 @@ echo "DATABASE_URL: ${DATABASE_URL}"
 # --- WAIT FOR POSTGRESQL ---
 echo "Checking PostgreSQL connectivity..."
 
-python << 'END'
-import sys, time, psycopg
+python <<END
+import sys, time, psycopg, os
 
-print("Starting PostgreSQL connection check...")
+print("Starting PostgreSQL connection check...", flush=True)
 start = time.time()
 timeout = 60
 attempt = 0
@@ -45,20 +44,20 @@ while True:
     attempt += 1
     try:
         conn = psycopg.connect(
-            dbname="${POSTGRES_DB}",
-            user="${POSTGRES_USER}",
-            password="${POSTGRES_PASSWORD}",
-            host="${POSTGRES_HOST}",
-            port="${POSTGRES_PORT}",
+            dbname=os.environ["POSTGRES_DB"],
+            user=os.environ["POSTGRES_USER"],
+            password=os.environ["POSTGRES_PASSWORD"],
+            host=os.environ["POSTGRES_HOST"],
+            port=int(os.environ["POSTGRES_PORT"]),
             connect_timeout=5
         )
         conn.close()
-        print(f"[Attempt {attempt}] ✅ PostgreSQL is available!")
+        print(f"[Attempt {attempt}] ✅ PostgreSQL is available!", flush=True)
         break
     except Exception as error:
-        print(f"[Attempt {attempt}] ❌ Waiting for PostgreSQL... {error}")
+        print(f"[Attempt {attempt}] ❌ Waiting for PostgreSQL... {error}", flush=True)
         if time.time() - start > timeout:
-            print("❌ Timeout reached. Exiting with failure.")
+            print("❌ Timeout reached. Exiting with failure.", flush=True)
             sys.exit(1)
         time.sleep(2)
 END
