@@ -6,6 +6,6 @@ set -o nounset
 
 
 exec newrelic-admin run-program gunicorn config.asgi:application \
-    --bind 0.0.0.0:5000 \
+    --bind 0.0.0.0:8080 \
     --chdir=/app \
     -k uvicorn.workers.UvicornWorker
