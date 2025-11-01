@@ -4,7 +4,6 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-python /app/manage.py collectstatic --noinput
 
 exec newrelic-admin run-program gunicorn config.asgi:application \
     --bind 0.0.0.0:5000 \
