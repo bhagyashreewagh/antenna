@@ -9,20 +9,28 @@ from ami.utils import s3
 
 logger = logging.getLogger(__name__)
 
-
+# PATCHED CONFIG — USE REAL AWS S3 INSTEAD OF MINIO
 S3_TEST_CONFIG = s3.S3Config(
-    endpoint_url=settings.S3_TEST_ENDPOINT,
-    access_key_id=settings.S3_TEST_KEY,
-    secret_access_key=settings.S3_TEST_SECRET,
-    bucket_name=settings.S3_TEST_BUCKET,
-    prefix="test_prefix",
-    public_base_url=f"http://minio:9000/{settings.S3_TEST_BUCKET}/test_prefix",
-    # public_base_url="http://minio:9001",
+    endpoint_url=None,  # let boto3 use the default AWS endpoint
+    access_key_id=settings.DJANGO_AWS_ACCESS_KEY_ID,
+    secret_access_key=settings.DJANGO_AWS_SECRET_ACCESS_KEY,
+    bucket_name=settings.DJANGO_AWS_STORAGE_BUCKET_NAME,
+    prefix="demo-data",
+    public_base_url=f"https://{settings.DJANGO_AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com/demo-data",
 )
 
 
 def create_storage_source(project: Project, name: str, prefix: str = S3_TEST_CONFIG.prefix) -> S3StorageSource:
-    s3.create_bucket(config=S3_TEST_CONFIG, bucket_name=S3_TEST_CONFIG.bucket_name)
+    # DO NOT TRY TO CREATE A BUCKET (AWS buckets already exist)
+    # Just ensure the folder / prefix exists by writing a tiny placeholder file
+    placeholder_key = f"{prefix}/.placeholder"
+
+    try:
+        s3.write_file(S3_TEST_CONFIG, placeholder_key, b'')
+        logger.info(f"Verified S3 prefix: {prefix}")
+    except Exception as e:
+        logger.error(f"Failed to verify S3 prefix {prefix}: {e}")
+
     data_source, _created = S3StorageSource.objects.get_or_create(
         project=project,
         name=name,
@@ -47,12 +55,9 @@ def populate_bucket(
     minutes_interval_variation: int = 10,
     skip_existing: bool = True,
 ) -> list[GeneratedTestFrame]:
-    # Images need to be named with iso timestamps to be sorted correctly
-    # They should be in folders by day
-    # the timestamps should range from 10pm to 4am over a few days
     created = []
 
-    # Check if the subdir exists and already has images
+    # Check if subdir already has images
     if skip_existing:
         keys = s3.list_files(config=config, subdir=subdir, limit=10)
         existing_keys = [key.key for key, i in keys if key]
@@ -60,7 +65,8 @@ def populate_bucket(
             logger.info(f"Skipping existing images in {subdir}: {existing_keys}")
             return []
 
-    logger.info(f"Generating a total of {num_nights * images_per_day} images over {num_nights} nights")
+    logger.info(f"Generating {num_nights * images_per_day} demo images…")
+
     for _ in range(num_nights):
         for frame in generate_moth_series(
             num_frames=images_per_day,
@@ -68,19 +74,19 @@ def populate_bucket(
             minutes_interval_variation=minutes_interval_variation,
             save_images=False,
         ):
-            # Convert the image to bytes
+            # Convert image to bytes
             img_byte_arr = io.BytesIO()
             frame.image.save(img_byte_arr, format="JPEG")
             img_byte_arr = img_byte_arr.getvalue()
 
-            # Create the S3 key for the image
+            # Construct S3 key
             key = f"{subdir}/{frame.filename}"
 
-            # Upload the image to S3
-            logging.info(f"Uploading {key} to {config.bucket_name}")
+            # Upload to REAL S3
+            logger.info(f"Uploading {key} → {config.bucket_name}")
             s3.write_file(config, key, img_byte_arr)
-            frame.object_store_key = key
 
+            frame.object_store_key = key
             created.append(frame)
 
     return created
